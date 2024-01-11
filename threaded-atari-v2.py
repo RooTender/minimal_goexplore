@@ -3,7 +3,7 @@ from threading import Thread
 from time import sleep
 import numpy as np
 import cv2
-import gym
+import gymnasium as gym
 
 def cellfn(frame):
     cell = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)
@@ -87,14 +87,14 @@ def explore(id):
             if np.random.random() > 0.95:
                 action = env.action_space.sample()
 
-            frame, reward, terminal, info = env.step(action)
+            frame, reward, terminal, truncated, info = env.step(action)
             score += reward
-            terminal |= info['ale.lives'] < 6
+            terminal |= info['lives'] < 6
 
             trajectory.append(action)
             episode_length += 4
 
-            if score > highscore:
+            if score >= highscore:
                 highscore = score
                 best_cell = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
@@ -107,7 +107,7 @@ def explore(id):
                 cell = archive[cellhash]
                 first_visit = cell.visit()
                 if first_visit or score > cell.reward or score == cell.reward and len(trajectory) < len(cell.trajectory):
-                    cell.ram = env.env.clone_full_state()
+                    cell.ram = env.unwrapped.clone_state(include_rng=True)
                     cell.reward = score
                     cell.trajectory = trajectory.copy()
                     cell.times_chosen = 0
@@ -125,7 +125,7 @@ def explore(id):
         restore_cell = archive[restore]
         ram, score, trajectory = restore_cell.choose()
         env.reset()
-        env.env.restore_full_state(ram)
+        env.unwrapped.restore_state(ram)
         my_iterations += 1
         iterations += 1
 
@@ -134,9 +134,13 @@ threads = [Thread(target = explore, args = (id,)) for id in range(8)]
 for thread in threads:
     thread.start()
 
+cv2.namedWindow('best cell – newest cell', cv2.WINDOW_NORMAL)
+
 while True:
     print ("Iterations: %d, Cells: %d, Frames: %d, Max Reward: %d" % (iterations, len(archive), frames, highscore))
-    image = np.concatenate((best_cell, new_cell), axis = 1)
+
+    image = np.concatenate((best_cell, new_cell), axis=1)
+
     cv2.imshow('best cell – newest cell', image)
     cv2.waitKey(1)
     sleep(1)
