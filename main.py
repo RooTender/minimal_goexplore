@@ -1,5 +1,6 @@
+import os
 from collections import defaultdict, namedtuple
-from threading import Thread
+from threading import Thread, Lock
 from time import sleep
 import numpy as np
 import cv2
@@ -61,14 +62,29 @@ highscore = 0
 frames = 0
 iterations = 0
 
-best_cell = np.zeros((1, 1, 3))
+highscore_lock = Lock()
 new_cell = np.zeros((1, 1, 3))
+
+highscore_updated = False
+replay_frames = []
 
 e1 = 0.001
 e2 = 0.00001
 
-def explore(id):
-    global highscore, frames, iterations, best_cell, new_cell, archive
+def replay_highscore_frames(score, highscore_frames):
+    cv2.namedWindow(f"Best Score {score}", cv2.WINDOW_NORMAL)
+
+    for _ in range(3):
+        for frame in highscore_frames:
+            cv2.imshow(f"Best Score {score}", frame)
+            cv2.waitKey(30)
+
+        cv2.waitKey(3000)
+
+    cv2.destroyWindow(f"Best Score {score}")
+
+def explore():
+    global highscore, highscore_updated, replay_frames, frames, iterations, new_cell, archive
 
     env = gym.make("MontezumaRevengeDeterministic-v4")
     frame = env.reset()
@@ -77,26 +93,31 @@ def explore(id):
     trajectory = []
     my_iterations = 0
 
-    sleep(id / 10)
+    local_frames = []
 
     while True:
         found_new_cell = False
         episode_length = 0
 
-        for i in range(100):
+        for _ in range(100):
             if np.random.random() > 0.95:
                 action = env.action_space.sample()
 
-            frame, reward, terminal, truncated, info = env.step(action)
+            frame, reward, terminal, terminal, info = env.step(action)
             score += reward
             terminal |= info['lives'] < 6
 
             trajectory.append(action)
             episode_length += 4
 
-            if score >= highscore:
-                highscore = score
-                best_cell = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            if score > highscore:
+                with highscore_lock:
+                    if score > highscore:
+                        highscore = score
+                        replay_frames = local_frames.copy()
+                        highscore_updated = True
+
+            local_frames.append(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))  # Store frame for replay
 
             if terminal:
                 frames += episode_length
@@ -129,18 +150,14 @@ def explore(id):
         my_iterations += 1
         iterations += 1
 
-threads = [Thread(target = explore, args = (id,)) for id in range(8)]
+threads = [Thread(target = explore) for _ in range(os.cpu_count() - 1)]
 
 for thread in threads:
     thread.start()
 
-cv2.namedWindow('best cell – newest cell', cv2.WINDOW_NORMAL)
-
 while True:
     print ("Iterations: %d, Cells: %d, Frames: %d, Max Reward: %d" % (iterations, len(archive), frames, highscore))
 
-    image = np.concatenate((best_cell, new_cell), axis=1)
-
-    cv2.imshow('best cell – newest cell', image)
-    cv2.waitKey(1)
-    sleep(1)
+    if highscore_updated:
+        replay_highscore_frames(highscore, replay_frames)
+        highscore_updated = False
