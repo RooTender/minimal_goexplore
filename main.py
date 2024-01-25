@@ -1,6 +1,7 @@
 import os
 from collections import defaultdict, namedtuple
 from threading import Thread, Lock
+from threading import Thread, Lock
 from time import sleep
 import numpy as np
 import cv2
@@ -63,7 +64,11 @@ frames = 0
 iterations = 0
 
 highscore_lock = Lock()
+highscore_lock = Lock()
 new_cell = np.zeros((1, 1, 3))
+
+highscore_updated = False
+replay_frames = []
 
 highscore_updated = False
 replay_frames = []
@@ -150,6 +155,7 @@ def explore():
         my_iterations += 1
         iterations += 1
 
+threads = [Thread(target = explore) for _ in range(os.cpu_count() - 1)]
 threads = [Thread(target = explore) for _ in range(os.cpu_count() - 1)]
 
 for thread in threads:
